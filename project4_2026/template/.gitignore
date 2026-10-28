@@ -1,0 +1,7 @@
+/build/
+/Project4Car
+/Project4Pendulum
+__pycache__/
+*.pyc
+*.log
+*.txt

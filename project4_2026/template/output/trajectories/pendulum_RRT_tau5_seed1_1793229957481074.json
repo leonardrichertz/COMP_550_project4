@@ -1,0 +1,12 @@
+{
+  "system": "pendulum",
+  "planner": "RRT",
+  "seed": 1,
+  "exact": true,
+  "seconds": 0.60225399999999996,
+  "states": 96,
+  "duration": 4.7499999999999911,
+  "goal_distance": 0.067176610058072628,
+  "replay_error": 0,
+  "torque": 5
+}

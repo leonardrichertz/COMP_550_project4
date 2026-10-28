@@ -1,0 +1,12 @@
+{
+  "system": "pendulum",
+  "planner": "KPIECE1",
+  "seed": 3,
+  "exact": true,
+  "seconds": 0.009835,
+  "states": 128,
+  "duration": 6.3499999999999881,
+  "goal_distance": 0.078668641942976167,
+  "replay_error": 0,
+  "torque": 5
+}

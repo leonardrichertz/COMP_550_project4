@@ -1,0 +1,12 @@
+{
+  "system": "car",
+  "planner": "KPIECE1",
+  "seed": 2,
+  "exact": true,
+  "seconds": 0.095320000000000002,
+  "states": 324,
+  "duration": 16.150000000000006,
+  "goal_distance": 0.45441447111401345,
+  "replay_error": 0,
+  "torque": 3
+}

@@ -21,6 +21,8 @@
 
 // Your implementation of RG-RRT
 #include "RG-RRT.h"
+#include "PlanningUtils.h"
+#include <ompl/control/SimpleDirectedControlSampler.h>
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -35,8 +37,12 @@ public:
 
     unsigned int getDimension() const override
     {
-        // TODO: The dimension of your projection for the pendulum
         return 2;
+    }
+
+    void defaultCellSizes() override
+    {
+        cellSizes_ = {0.2, 0.5};
     }
 
     void project(const ompl::base::State * state, Eigen::Ref<Eigen::VectorXd> projection) const override
@@ -44,7 +50,6 @@ public:
         const auto *cs = state->as<ob::CompoundState>();
         projection(0) = cs->as<ob::SO2StateSpace::StateType>(0)->value;
         projection(1) = cs->as<ob::RealVectorStateSpace::StateType>(1)->values[0];
-        // TODO: Your projection for the pendulum
     }
 };
 
@@ -60,7 +65,7 @@ void pendulumODE(const ompl::control::ODESolver::StateType & q , const ompl::con
 ompl::control::SimpleSetupPtr createPendulum(double torque)
 {
     // State space: theta in SO2 (wraps at +-pi), omega in [-10, 10]
-    auto theta = std::make_shared<ob::SO2StateSpace>(); // andgle that wraps around
+    auto theta = std::make_shared<ob::SO2StateSpace>(); // angle that wraps around
     auto omega = std::make_shared<ob::RealVectorStateSpace>(1); // real vector for angular velocity
     omega->setBounds(-10.0, 10.0);
 
@@ -85,13 +90,16 @@ ompl::control::SimpleSetupPtr createPendulum(double torque)
     ss->setStateValidityChecker([si](const ob::State *state) { return si->satisfiesBounds(state); });
 
     // Integrate pendulumODE, then wrap theta back into [-pi, pi)
-    auto odeSolver = std::make_shared<oc::ODEBasicSolver<>>(ss->getSpaceInformation(), &pendulumODE);
+    auto odeSolver = std::make_shared<oc::ODEBasicSolver<>>(ss->getSpaceInformation(), &pendulumODE, 0.005);
     ss->setStatePropagator(oc::ODESolver::getStatePropagator(
         odeSolver, [theta](const ob::State *, const oc::Control *, double, ob::State *result)
         { theta->enforceBounds(result->as<ob::CompoundState>()->components[0]); }));
 
+    si->setDirectedControlSamplerAllocator([](const oc::SpaceInformation *info)
+        { return std::make_shared<oc::SimpleDirectedControlSampler>(info, 5); });
+
     // Set the propagation step size and control duration
-    si->setPropagationStepSize(0.05); // one step is 0.05 secondsof simulated time
+    si->setPropagationStepSize(0.05); // one step is 0.05 seconds of simulated time
     si->setMinMaxControlDuration(1, 10); // We hold the sampled control for 1 to 10 steps (0.05 to 0.5 seconds)
 
     // Hanging down at rest -> pointing up at rest
@@ -107,97 +115,67 @@ ompl::control::SimpleSetupPtr createPendulum(double torque)
 }
 
 
-void planPendulum(ompl::control::SimpleSetupPtr &ss, int choice)
+bool planPendulum(oc::SimpleSetupPtr &ss, int choice, const project4::Options &options)
 {
-    auto si = ss->getSpaceInformation();
-    if (choice == 1)
-        ss->setPlanner(std::make_shared<oc::RRT>(si));
-    else if (choice == 2)
-        ss->setPlanner(std::make_shared<oc::KPIECE1>(si));
-    else
-    {
-        // TODO: ss->setPlanner(std::make_shared<oc::RGRRT>(si));
-        std::cerr << "RG-RRT not implemented yet" << std::endl;
-        return;
-    }
+    return project4::plan(ss, choice, options, "pendulum",
+                          "_tau" + std::to_string(static_cast<int>(options.torque)));
+}
 
+void benchmarkPendulum(oc::SimpleSetupPtr & /* ss */)
+{
+    std::cout << "Benchmarking is outside Exercises 1 and 2; not implemented.\n";
+}
+
+void testPendulum()
+{
+    auto ss = createPendulum(3);
     ss->setup();
-    ob::PlannerStatus solved = ss->solve(30.0);
-
-    if (solved != ob::PlannerStatus::EXACT_SOLUTION)
+    ob::ScopedState<> state(ss->getStateSpace());
+    state[0] = -std::acos(0.0); state[1] = 0;
+    project4::require(ss->getSpaceInformation()->isValid(state.get()), "Valid pendulum rejected");
+    for (double omega : {-10.01, 10.01})
     {
-        std::cout << "No exact solution found (" << solved.asString() << ")" << std::endl;
-        return;
+        state[1] = omega;
+        project4::require(!ss->getSpaceInformation()->isValid(state.get()), "Invalid omega accepted");
     }
-
-    // Name the output after the planner and torque bound, e.g. pendulum_RRT_tau3.txt
-    double torque = ss->getControlSpace()->as<oc::RealVectorControlSpace>()->getBounds().high[0];
-    std::string file = "pendulum_" + ss->getPlanner()->getName() + "_tau" +
-                       std::to_string(static_cast<int>(torque)) + ".txt";
-
-    oc::PathControl &path = ss->getSolutionPath();
-    path.interpolate();
-    std::ofstream out(file);
-    path.asGeometric().printAsMatrix(out);
-    std::cout << "Found solution; wrote " << path.getStateCount() << " states to " << file << std::endl;
+    state[0] = 0.4; state[1] = -2;
+    Eigen::VectorXd projection(2);
+    ss->getStateSpace()->getDefaultProjection()->project(state.get(), projection);
+    project4::require(std::abs(projection[0] - 0.4) < 1e-12 && projection[1] == -2,
+                      "Pendulum projection incorrect");
+    auto si = ss->getSpaceInformation();
+    auto *control = si->allocControl();
+    control->as<oc::RealVectorControlSpace::ControlType>()->values[0] = 3;
+    oc::ODESolver::StateType derivative;
+    pendulumODE({0, 2}, control, derivative);
+    project4::require(derivative[0] == 2 && std::abs(derivative[1] + 6.81) < 1e-12,
+                      "Pendulum ODE incorrect");
+    state[0] = std::acos(-1.0) - 0.001; state[1] = 2;
+    ob::ScopedState<> result(ss->getStateSpace());
+    si->getStatePropagator()->propagate(state.get(), control, 0.05, result.get());
+    project4::require(result[0] < 0 && si->isValid(result.get()), "Angle wrapping failed");
+    si->freeControl(control);
+    std::cout << "Pendulum self-test passed: ODE, bounds rejection, projection, propagation/wrapping.\n";
 }
 
-
-void benchmarkPendulum(ompl::control::SimpleSetupPtr &/* ss */)
+int main(int argc, char **argv)
 {
-    // TODO: Do some benchmarking for the pendulum
-}
-
-int main(int /* argc */, char ** /* argv */)
-{
-    int choice;
-    do
+    try
     {
-        std::cout << "Plan or Benchmark? " << std::endl;
-        std::cout << " (1) Plan" << std::endl;
-        std::cout << " (2) Benchmark" << std::endl;
-
-        std::cin >> choice;
-    } while (choice < 1 || choice > 2);
-
-    int which;
-    do
-    {
-        std::cout << "Torque? " << std::endl;
-        std::cout << " (1)  3" << std::endl;
-        std::cout << " (2)  5" << std::endl;
-        std::cout << " (3) 10" << std::endl;
-
-        std::cin >> which;
-    } while (which < 1 || which > 3);
-
-    double torques[] = {3., 5., 10.};
-    double torque = torques[which - 1];
-
-    ompl::control::SimpleSetupPtr ss = createPendulum(torque);
-
-    // Planning
-    if (choice == 1)
-    {
-        int planner;
-        do
+        auto options = project4::parseOptions(argc, argv);
+        if (options.selfTest) { testPendulum(); return 0; }
+        int action = 1;
+        if (!options.planner)
         {
-            std::cout << "What Planner? " << std::endl;
-            std::cout << " (1) RRT" << std::endl;
-            std::cout << " (2) KPIECE1" << std::endl;
-            std::cout << " (3) RG-RRT" << std::endl;
-
-            std::cin >> planner;
-        } while (planner < 1 || planner > 3);
-
-        planPendulum(ss, planner);
+            action = project4::menu("Plan or Benchmark?\n (1) Plan\n (2) Benchmark\n", 2);
+            const int torque = project4::menu("Torque?\n (1) 3\n (2) 5\n (3) 10\n", 3);
+            options.torque = torque == 1 ? 3 : torque == 2 ? 5 : 10;
+        }
+        auto ss = createPendulum(options.torque);
+        if (action == 2) { benchmarkPendulum(ss); return 0; }
+        if (!options.planner)
+            options.planner = project4::menu("What Planner?\n (1) RRT\n (2) KPIECE1\n (3) RG-RRT\n", 3);
+        return planPendulum(ss, options.planner, options) ? 0 : 1;
     }
-    // Benchmarking
-    else if (choice == 2)
-        benchmarkPendulum(ss);
-
-    else
-        std::cerr << "How did you get here? Invalid choice." << std::endl;
-
-    return 0;
+    catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }
 }

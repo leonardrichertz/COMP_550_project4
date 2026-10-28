@@ -16,6 +16,6 @@ cd project4_2026/template
 make
 ```
 
-Run `./Project4Pendulum` or `./Project4Car`. See [`template/README`](template/README) for implementation, visualization, and benchmark instructions. The starter compiles; the planning functions are student TODOs.
+Run `./Project4Pendulum` or `./Project4Car`. Exercises 1 and 2 now support OMPL's control-based RRT and KPIECE1 for both systems. RG-RRT and benchmarking remain placeholders. See [`template/README`](template/README) for build, execution, validation, and visualization commands, and [`template/TEST_RESULTS.md`](template/TEST_RESULTS.md) for tested results. Generated trajectories, PNG figures, and a one-page checkpoint report are in [`template/output/`](template/output/).
 
 To rebuild the handout, run `make` from `project4_2026/` with LaTeX installed.

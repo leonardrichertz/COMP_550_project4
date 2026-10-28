@@ -1,0 +1,12 @@
+{
+  "system": "car",
+  "planner": "RRT",
+  "seed": 3,
+  "exact": true,
+  "seconds": 0.157945,
+  "states": 363,
+  "duration": 18.100000000000122,
+  "goal_distance": 0.49812029623586651,
+  "replay_error": 0,
+  "torque": 3
+}
