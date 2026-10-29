@@ -12,9 +12,9 @@
 #include <cmath>
 #include <ompl/base/ProjectionEvaluator.h>
 #include <ompl/base/spaces/SE2StateSpace.h>
+#include <ompl/base/spaces/SO2StateSpace.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
 #include <ompl/control/ODESolver.h>
-#include <ompl/control/SimpleDirectedControlSampler.h>
 #include <ompl/control/SimpleSetup.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/planners/rrt/RRT.h>
@@ -94,8 +94,6 @@ oc::SimpleSetupPtr createCar(std::vector<Rectangle> &obstacles)
         }));
     si->setPropagationStepSize(0.05);
     si->setMinMaxControlDuration(1, 20); // 0.05--1.0 seconds
-    si->setDirectedControlSamplerAllocator([](const oc::SpaceInformation *info)
-        { return std::make_shared<oc::SimpleDirectedControlSampler>(info, 5); });
     ob::ScopedState<> start(space), goal(space);
     start[0] = 1; start[1] = 5; start[2] = 0; start[3] = 0;
     goal[0] = 11; goal[1] = 5; goal[2] = 0; goal[3] = 0;
@@ -108,18 +106,9 @@ bool planCar(oc::SimpleSetupPtr &ss, int choice)
 {
     auto si = ss->getSpaceInformation();
     if (choice == 1)
-    {
-        auto planner = std::make_shared<oc::RRT>(si);
-        planner->setGoalBias(0.1);
-        planner->setIntermediateStates(true);
-        ss->setPlanner(planner);
-    }
+        ss->setPlanner(std::make_shared<oc::RRT>(si));
     else if (choice == 2)
-    {
-        auto planner = std::make_shared<oc::KPIECE1>(si);
-        planner->setGoalBias(0.1);
-        ss->setPlanner(planner);
-    }
+        ss->setPlanner(std::make_shared<oc::KPIECE1>(si));
     else
     {
         std::cerr << "RG-RRT not implemented yet\n";

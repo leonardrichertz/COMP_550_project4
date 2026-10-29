@@ -23,7 +23,6 @@
 
 // Your implementation of RG-RRT
 #include "RG-RRT.h"
-#include <ompl/control/SimpleDirectedControlSampler.h>
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -96,9 +95,6 @@ ompl::control::SimpleSetupPtr createPendulum(double torque)
         odeSolver, [theta](const ob::State *, const oc::Control *, double, ob::State *result)
         { theta->enforceBounds(result->as<ob::CompoundState>()->components[0]); }));
 
-    si->setDirectedControlSamplerAllocator([](const oc::SpaceInformation *info)
-        { return std::make_shared<oc::SimpleDirectedControlSampler>(info, 5); });
-
     // Set the propagation step size and control duration
     si->setPropagationStepSize(0.05); // one step is 0.05 seconds of simulated time
     si->setMinMaxControlDuration(1, 10); // We hold the sampled control for 1 to 10 steps (0.05 to 0.5 seconds)
@@ -120,18 +116,9 @@ bool planPendulum(oc::SimpleSetupPtr &ss, int choice)
 {
     auto si = ss->getSpaceInformation();
     if (choice == 1)
-    {
-        auto planner = std::make_shared<oc::RRT>(si);
-        planner->setGoalBias(0.1);
-        planner->setIntermediateStates(true);
-        ss->setPlanner(planner);
-    }
+        ss->setPlanner(std::make_shared<oc::RRT>(si));
     else if (choice == 2)
-    {
-        auto planner = std::make_shared<oc::KPIECE1>(si);
-        planner->setGoalBias(0.1);
-        ss->setPlanner(planner);
-    }
+        ss->setPlanner(std::make_shared<oc::KPIECE1>(si));
     else
     {
         std::cerr << "RG-RRT not implemented yet\n";
