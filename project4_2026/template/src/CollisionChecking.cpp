@@ -9,8 +9,6 @@
 #include <cmath>
 
 
-namespace
-{
 struct Point
 {
     double x, y;
@@ -21,61 +19,8 @@ struct Line
     Point start, end;
 };
 
-struct Range
-{
-    double start, end;
-};
-
-bool between(double x, double x_start, double x_end)
-{
-    return (x >= x_start && x <= x_end) || (x <= x_start && x >= x_end);
-}
-
-bool rangesOverlap(Range range1, Range range2)
-{
-    double start1 = std::min(range1.start, range1.end);
-    double end1 = std::max(range1.start, range1.end);
-    double start2 = std::min(range2.start, range2.end);
-    double end2 = std::max(range2.start, range2.end);
-
-    return start1 <= end2 && start2 <= end1;
-}
-
-// Check whether two finite line segments intersect
-bool segmentsIntersect(const Line &a, const Line &b)
-{
-    double ax = a.end.x - a.start.x;
-    double ay = a.end.y - a.start.y;
-    double bx = b.end.x - b.start.x;
-    double by = b.end.y - b.start.y;
-
-    double dx = b.start.x - a.start.x;
-    double dy = b.start.y - a.start.y;
-
-    double denominator = ax * by - ay * bx;
-
-    // Parallel lines
-    if (denominator == 0.0)
-    {
-        // Parallel but not on the same line
-        if (dx * ay - dy * ax != 0.0)
-        {
-            return false;
-        }
-
-        // Lines are on the same line, check if the segments overlap
-        return rangesOverlap({a.start.x, a.end.x}, {b.start.x, b.end.x}) &&
-               rangesOverlap({a.start.y, a.end.y}, {b.start.y, b.end.y});
-    }
-
-    // Find where the two lines intersect
-    double t = (dx * by - dy * bx) / denominator;
-    double u = (dx * ay - dy * ax) / denominator;
-
-    // The intersection must lie inside both finite line segments
-    return between(t, 0.0, 1.0) && between(u, 0.0, 1.0);
-}
-} // namespace
+bool between(double x, double x_start, double x_end);
+bool segmentsIntersect(const Line &a, const Line &b);
 
 // Intersect the point (x,y) with the set of rectangles. If the point lies outside of all obstacles, return true.
 bool isValidPoint(double x, double y, const std::vector<Rectangle> &obstacles)
@@ -105,7 +50,7 @@ bool isValidCircle(double x, double y, double radius, const std::vector<Rectangl
         double distanceX = x - closestX;
         double distanceY = y - closestY;
 
-        // Contact with the obstacle boundary is also a collision.
+        // Boundary contact is also a collision, consistent with points and squares.
         if ((distanceX * distanceX + distanceY * distanceY) <= (radius * radius))
         {
             return false;
@@ -191,4 +136,59 @@ bool isValidSquare(double x, double y, double theta, double sideLength, const st
     }
 
     return true;
+}
+
+struct Range
+{
+    double start, end;
+};
+
+bool between(double x, double x_start, double x_end)
+{
+    return (x >= x_start && x <= x_end) || (x <= x_start && x >= x_end);
+}
+
+bool rangesOverlap(Range range1, Range range2)
+{
+    double start1 = std::min(range1.start, range1.end);
+    double end1 = std::max(range1.start, range1.end);
+    double start2 = std::min(range2.start, range2.end);
+    double end2 = std::max(range2.start, range2.end);
+
+    return start1 <= end2 && start2 <= end1;
+}
+
+// Check whether two finite line segments intersect
+bool segmentsIntersect(const Line &a, const Line &b)
+{
+    double ax = a.end.x - a.start.x;
+    double ay = a.end.y - a.start.y;
+    double bx = b.end.x - b.start.x;
+    double by = b.end.y - b.start.y;
+
+    double dx = b.start.x - a.start.x;
+    double dy = b.start.y - a.start.y;
+
+    double denominator = ax * by - ay * bx;
+
+    // Parallel lines
+    if (denominator == 0.0)
+    {
+        // Parallel but not on the same line
+        if (dx * ay - dy * ax != 0.0)
+        {
+            return false;
+        }
+
+        // Lines are on the same line, check if the segments overlap
+        return rangesOverlap({a.start.x, a.end.x}, {b.start.x, b.end.x}) &&
+               rangesOverlap({a.start.y, a.end.y}, {b.start.y, b.end.y});
+    }
+
+    // Find where the two lines intersect
+    double t = (dx * by - dy * bx) / denominator;
+    double u = (dx * ay - dy * ax) / denominator;
+
+    // The intersection must lie inside both finite line segments
+    return between(t, 0.0, 1.0) && between(u, 0.0, 1.0);
 }

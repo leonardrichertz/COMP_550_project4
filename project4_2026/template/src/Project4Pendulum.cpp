@@ -9,6 +9,8 @@
 #include <iostream>
 #include <string>
 
+#include <filesystem>
+#include <iomanip>
 #include <ompl/base/ProjectionEvaluator.h>
 #include <ompl/base/spaces/SO2StateSpace.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
@@ -21,7 +23,6 @@
 
 // Your implementation of RG-RRT
 #include "RG-RRT.h"
-#include "PlanningUtils.h"
 #include <ompl/control/SimpleDirectedControlSampler.h>
 
 namespace ob = ompl::base;
@@ -115,67 +116,122 @@ ompl::control::SimpleSetupPtr createPendulum(double torque)
 }
 
 
-bool planPendulum(oc::SimpleSetupPtr &ss, int choice, const project4::Options &options)
+bool planPendulum(oc::SimpleSetupPtr &ss, int choice)
 {
-    return project4::plan(ss, choice, options, "pendulum",
-                          "_tau" + std::to_string(static_cast<int>(options.torque)));
+    auto si = ss->getSpaceInformation();
+    if (choice == 1)
+    {
+        auto planner = std::make_shared<oc::RRT>(si);
+        planner->setGoalBias(0.1);
+        planner->setIntermediateStates(true);
+        ss->setPlanner(planner);
+    }
+    else if (choice == 2)
+    {
+        auto planner = std::make_shared<oc::KPIECE1>(si);
+        planner->setGoalBias(0.1);
+        ss->setPlanner(planner);
+    }
+    else
+    {
+        std::cerr << "RG-RRT not implemented yet\n";
+        return false;
+    }
+
+    ss->setup();
+    std::cout << "Pendulum: " << ss->getPlanner()->getName() << '\n';
+    const auto solved = ss->solve(30.0);
+    std::cout << "Exact solution: " << (solved == ob::PlannerStatus::EXACT_SOLUTION ? "yes" : "no")
+              << "; " << solved.asString() << "; time: " << ss->getLastPlanComputationTime() << " s\n";
+    if (solved != ob::PlannerStatus::EXACT_SOLUTION)
+        return false;
+    auto &path = ss->getSolutionPath();
+    if (!path.check())
+    {
+        std::cerr << "Solution failed OMPL's control-path validity check\n";
+        return false;
+    }
+
+    std::error_code error;
+    std::filesystem::create_directories("output", error);
+    const double torque = ss->getControlSpace()->as<oc::RealVectorControlSpace>()->getBounds().high[0];
+    const std::string file = "output/pendulum_" + ss->getPlanner()->getName() + "_tau" +
+                             std::to_string(static_cast<int>(torque)) + ".txt";
+    std::ofstream out(file);
+    if (error || !out)
+    {
+        std::cerr << "Cannot open " << file << '\n';
+        return false;
+    }
+    const auto states = path.asGeometric();
+    out << std::setprecision(17);
+    states.printAsMatrix(out);
+    out.close();
+    if (!out)
+    {
+        std::cerr << "Could not write " << file << '\n';
+        return false;
+    }
+    std::cout << "Wrote " << states.getStateCount() << " states to " << file << '\n';
+    return true;
 }
 
 void benchmarkPendulum(oc::SimpleSetupPtr & /* ss */)
 {
-    std::cout << "Benchmarking is outside Exercises 1 and 2; not implemented.\n";
+    // TODO: Exercise 4.
+    std::cout << "Benchmarking not implemented yet\n";
 }
 
-void testPendulum()
+int main(int /* argc */, char ** /* argv */)
 {
-    auto ss = createPendulum(3);
-    ss->setup();
-    ob::ScopedState<> state(ss->getStateSpace());
-    state[0] = -std::acos(0.0); state[1] = 0;
-    project4::require(ss->getSpaceInformation()->isValid(state.get()), "Valid pendulum rejected");
-    for (double omega : {-10.01, 10.01})
+    int choice;
+    do
     {
-        state[1] = omega;
-        project4::require(!ss->getSpaceInformation()->isValid(state.get()), "Invalid omega accepted");
-    }
-    state[0] = 0.4; state[1] = -2;
-    Eigen::VectorXd projection(2);
-    ss->getStateSpace()->getDefaultProjection()->project(state.get(), projection);
-    project4::require(std::abs(projection[0] - 0.4) < 1e-12 && projection[1] == -2,
-                      "Pendulum projection incorrect");
-    auto si = ss->getSpaceInformation();
-    auto *control = si->allocControl();
-    control->as<oc::RealVectorControlSpace::ControlType>()->values[0] = 3;
-    oc::ODESolver::StateType derivative;
-    pendulumODE({0, 2}, control, derivative);
-    project4::require(derivative[0] == 2 && std::abs(derivative[1] + 6.81) < 1e-12,
-                      "Pendulum ODE incorrect");
-    state[0] = std::acos(-1.0) - 0.001; state[1] = 2;
-    ob::ScopedState<> result(ss->getStateSpace());
-    si->getStatePropagator()->propagate(state.get(), control, 0.05, result.get());
-    project4::require(result[0] < 0 && si->isValid(result.get()), "Angle wrapping failed");
-    si->freeControl(control);
-    std::cout << "Pendulum self-test passed: ODE, bounds rejection, projection, propagation/wrapping.\n";
-}
+        std::cout << "Plan or Benchmark? " << std::endl;
+        std::cout << " (1) Plan" << std::endl;
+        std::cout << " (2) Benchmark" << std::endl;
 
-int main(int argc, char **argv)
-{
-    try
+        if (!(std::cin >> choice)) return 1;
+    } while (choice < 1 || choice > 2);
+
+    int which;
+    do
     {
-        auto options = project4::parseOptions(argc, argv);
-        if (options.selfTest) { testPendulum(); return 0; }
-        int action = 1;
-        if (!options.planner)
+        std::cout << "Torque? " << std::endl;
+        std::cout << " (1)  3" << std::endl;
+        std::cout << " (2)  5" << std::endl;
+        std::cout << " (3) 10" << std::endl;
+
+        if (!(std::cin >> which)) return 1;
+    } while (which < 1 || which > 3);
+
+    double torques[] = {3., 5., 10.};
+    double torque = torques[which - 1];
+
+    ompl::control::SimpleSetupPtr ss = createPendulum(torque);
+
+    // Planning
+    if (choice == 1)
+    {
+        int planner;
+        do
         {
-            action = project4::menu("Plan or Benchmark?\n (1) Plan\n (2) Benchmark\n", 2);
-            const int torque = project4::menu("Torque?\n (1) 3\n (2) 5\n (3) 10\n", 3);
-            options.torque = torque == 1 ? 3 : torque == 2 ? 5 : 10;
-        }
-        auto ss = createPendulum(options.torque);
-        if (action == 2) { benchmarkPendulum(ss); return 0; }
-        if (!options.planner)
-            options.planner = project4::menu("What Planner?\n (1) RRT\n (2) KPIECE1\n (3) RG-RRT\n", 3);
-        return planPendulum(ss, options.planner, options) ? 0 : 1;
+            std::cout << "What Planner? " << std::endl;
+            std::cout << " (1) RRT" << std::endl;
+            std::cout << " (2) KPIECE1" << std::endl;
+            std::cout << " (3) RG-RRT" << std::endl;
+
+            if (!(std::cin >> planner)) return 1;
+        } while (planner < 1 || planner > 3);
+
+        return planPendulum(ss, planner) ? 0 : 1;
     }
-    catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }
+    // Benchmarking
+    else if (choice == 2)
+        benchmarkPendulum(ss);
+
+    else
+        std::cerr << "How did you get here? Invalid choice." << std::endl;
+
+    return 0;
 }

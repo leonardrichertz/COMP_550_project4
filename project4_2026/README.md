@@ -16,6 +16,14 @@ cd project4_2026/template
 make
 ```
 
-Run `./Project4Pendulum` or `./Project4Car`. Exercises 1 and 2 now support OMPL's control-based RRT and KPIECE1 for both systems. RG-RRT and benchmarking remain placeholders. See [`template/README`](template/README) for build, execution, validation, and visualization commands, and [`template/TEST_RESULTS.md`](template/TEST_RESULTS.md) for tested results. Generated trajectories, PNG figures, and a one-page checkpoint report are in [`template/output/`](template/output/).
+Run `./Project4Pendulum` or `./Project4Car` and use the original menus. RRT and KPIECE1 are implemented; RG-RRT and benchmarking remain placeholders. Run the pendulum with each planner and torque bound (3, 5, 10), and run the car with each planner.
+
+Successful runs export states to `template/output/`, with separate filenames for each planner and torque. The car also exports its obstacle rectangles to `output/street.txt`. From `template/`, generate the two comparison figures with:
+
+```bash
+python src/plot_trajectories.py
+```
+
+This requires NumPy and Matplotlib. The figures are saved in `template/output/plots/`; the required one-page report is `template/output/pdf/checkpoint_report.pdf`. Rerunning a configuration replaces its previous trajectory. Use `make clean` before packaging the submission.
 
 To rebuild the handout, run `make` from `project4_2026/` with LaTeX installed.

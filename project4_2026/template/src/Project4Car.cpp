@@ -4,14 +4,23 @@
 // Authors: Leonard Richertz, Agustin Zakalik
 //////////////////////////////////////
 
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <string>
+#include <cmath>
 #include <ompl/base/ProjectionEvaluator.h>
 #include <ompl/base/spaces/SE2StateSpace.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
 #include <ompl/control/ODESolver.h>
 #include <ompl/control/SimpleDirectedControlSampler.h>
+#include <ompl/control/SimpleSetup.h>
+#include <ompl/control/spaces/RealVectorControlSpace.h>
+#include <ompl/control/planners/rrt/RRT.h>
+#include <ompl/control/planners/kpiece/KPIECE1.h>
 #include "CollisionChecking.h"
 #include "RG-RRT.h"
-#include "PlanningUtils.h"
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -95,80 +104,120 @@ oc::SimpleSetupPtr createCar(std::vector<Rectangle> &obstacles)
     return ss;
 }
 
-bool planCar(oc::SimpleSetupPtr &ss, int choice, const project4::Options &options)
+bool planCar(oc::SimpleSetupPtr &ss, int choice)
 {
-    return project4::plan(ss, choice, options, "car");
+    auto si = ss->getSpaceInformation();
+    if (choice == 1)
+    {
+        auto planner = std::make_shared<oc::RRT>(si);
+        planner->setGoalBias(0.1);
+        planner->setIntermediateStates(true);
+        ss->setPlanner(planner);
+    }
+    else if (choice == 2)
+    {
+        auto planner = std::make_shared<oc::KPIECE1>(si);
+        planner->setGoalBias(0.1);
+        ss->setPlanner(planner);
+    }
+    else
+    {
+        std::cerr << "RG-RRT not implemented yet\n";
+        return false;
+    }
+
+    ss->setup();
+    std::cout << "Car: " << ss->getPlanner()->getName() << '\n';
+    const auto solved = ss->solve(30.0);
+    std::cout << "Exact solution: " << (solved == ob::PlannerStatus::EXACT_SOLUTION ? "yes" : "no")
+              << "; " << solved.asString() << "; time: " << ss->getLastPlanComputationTime() << " s\n";
+    if (solved != ob::PlannerStatus::EXACT_SOLUTION)
+        return false;
+    auto &path = ss->getSolutionPath();
+    if (!path.check())
+    {
+        std::cerr << "Solution failed OMPL's control-path validity check\n";
+        return false;
+    }
+
+    std::error_code error;
+    std::filesystem::create_directories("output", error);
+    const std::string file = "output/car_" + ss->getPlanner()->getName() + ".txt";
+    std::ofstream out(file);
+    if (error || !out)
+    {
+        std::cerr << "Cannot open " << file << '\n';
+        return false;
+    }
+    const auto states = path.asGeometric();
+    out << std::setprecision(17);
+    states.printAsMatrix(out);
+    out.close();
+    if (!out)
+    {
+        std::cerr << "Could not write " << file << '\n';
+        return false;
+    }
+    std::cout << "Wrote " << states.getStateCount() << " states to " << file << '\n';
+    return true;
 }
 
 void benchmarkCar(oc::SimpleSetupPtr & /* ss */)
 {
-    std::cout << "Benchmarking is outside Exercises 1 and 2; not implemented.\n";
+    // TODO: Exercise 4.
+    std::cout << "Benchmarking not implemented yet\n";
 }
 
-void testCar(std::vector<Rectangle> &obstacles)
+int main(int /* argc */, char ** /* argv */)
 {
-    auto ss = createCar(obstacles);
-    ss->setup();
-    ob::ScopedState<> state(ss->getStateSpace());
-    state[0] = 1; state[1] = 5; state[2] = 0; state[3] = -1;
-    auto si = ss->getSpaceInformation();
-    project4::require(si->isValid(state.get()), "Reverse motion incorrectly rejected");
-    for (double speed : {-2.01, 2.01})
-    {
-        state[3] = speed;
-        project4::require(!si->isValid(state.get()), "Out-of-bounds speed accepted");
-    }
-    state[3] = 0; state[0] = -0.01;
-    project4::require(!si->isValid(state.get()), "Out-of-bounds position accepted");
-    for (const auto &r : obstacles)
-    {
-        state[0] = r.x + r.width / 2; state[1] = r.y + r.height / 2;
-        project4::require(!si->isValid(state.get()), "Obstacle collision accepted");
-    }
-    state[0] = 1.2; state[1] = 2.3; state[2] = 0.4; state[3] = -0.7;
-    Eigen::VectorXd projection(3);
-    ss->getStateSpace()->getDefaultProjection()->project(state.get(), projection);
-    project4::require(projection[0] == 1.2 && projection[1] == 2.3 && projection[2] == -0.7,
-                      "Car projection incorrect");
-    auto *control = si->allocControl();
-    auto *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
-    u[0] = 0.5; u[1] = -1;
-    oc::ODESolver::StateType derivative;
-    carODE({1, 2, 0, -2}, control, derivative);
-    project4::require(derivative == oc::ODESolver::StateType({-2, 0, 0.5, -1}), "Car ODE incorrect");
-    state[0] = 1; state[1] = 2; state[2] = 0; state[3] = 0;
-    u[0] = 0; u[1] = 1;
-    ob::ScopedState<> result(ss->getStateSpace());
-    si->getStatePropagator()->propagate(state.get(), control, 0.5, result.get());
-    project4::require(std::abs(result[0] - 1.125) < 1e-9 && std::abs(result[3] - 0.5) < 1e-9,
-                      "Car integration incorrect");
-    si->freeControl(control);
-    std::cout << "Car self-test passed: ODE, reverse, bounds/collision rejection, projection, integration.\n";
-}
+    std::vector<Rectangle> obstacles;
+    makeStreet(obstacles);
 
-int main(int argc, char **argv)
-{
-    try
+    int choice;
+    do
     {
-        const auto options = project4::parseOptions(argc, argv);
-        std::vector<Rectangle> obstacles;
-        makeStreet(obstacles);
-        if (options.selfTest) { testCar(obstacles); return 0; }
-        int action = 1, planner = options.planner;
-        if (!planner) action = project4::menu("Plan or Benchmark?\n (1) Plan\n (2) Benchmark\n", 2);
-        auto ss = createCar(obstacles);
-        if (action == 2) { benchmarkCar(ss); return 0; }
-        if (!planner)
-            planner = project4::menu("What Planner?\n (1) RRT\n (2) KPIECE1\n (3) RG-RRT\n", 3);
-        // Export the same obstacle data used by the validity checker.
-        std::filesystem::create_directories(options.output);
-        std::ofstream street(std::filesystem::path(options.output) / "street.txt");
-        project4::require(street.good(), "Cannot write street.txt");
-        street << std::setprecision(17);
-        for (const auto &r : obstacles) street << r.x << ' ' << r.y << ' ' << r.width << ' ' << r.height << '\n';
-        street.close();
-        project4::require(!street.fail(), "Failed writing street.txt");
-        return planCar(ss, planner, options) ? 0 : 1;
+        std::cout << "Plan or Benchmark? " << std::endl;
+        std::cout << " (1) Plan" << std::endl;
+        std::cout << " (2) Benchmark" << std::endl;
+
+        if (!(std::cin >> choice)) return 1;
+    } while (choice < 1 || choice > 2);
+
+    ompl::control::SimpleSetupPtr ss = createCar(obstacles);
+
+    // Planning
+    if (choice == 1)
+    {
+        int planner;
+        do
+        {
+            std::cout << "What Planner? " << std::endl;
+            std::cout << " (1) RRT" << std::endl;
+            std::cout << " (2) KPIECE1" << std::endl;
+            std::cout << " (3) RG-RRT" << std::endl;
+
+            if (!(std::cin >> planner)) return 1;
+        } while (planner < 1 || planner > 3);
+
+        if (planner != 3)
+        {
+            std::error_code error;
+            std::filesystem::create_directories("output", error);
+            std::ofstream street("output/street.txt");
+            if (error || !street) { std::cerr << "Cannot write street.txt\n"; return 1; }
+            for (const auto &r : obstacles)
+                street << r.x << ' ' << r.y << ' ' << r.width << ' ' << r.height << '\n';
+            street.close();
+            if (!street) return 1;
+        }
+        return planCar(ss, planner) ? 0 : 1;
     }
-    catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }
+    // Benchmarking
+    else if (choice == 2)
+        benchmarkCar(ss);
+
+    else
+        std::cerr << "How did you get here? Invalid choice." << std::endl;
+
+    return 0;
 }
