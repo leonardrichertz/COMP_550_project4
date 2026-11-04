@@ -20,6 +20,7 @@
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/planners/rrt/RRT.h>
 #include <ompl/control/planners/kpiece/KPIECE1.h>
+#include <ompl/tools/benchmark/Benchmark.h>
 
 // Your implementation of RG-RRT
 #include "RG-RRT.h"
@@ -160,10 +161,40 @@ bool planPendulum(oc::SimpleSetupPtr &ss, int choice)
     return true;
 }
 
-void benchmarkPendulum(oc::SimpleSetupPtr & /* ss */)
+void benchmarkPendulum(oc::SimpleSetupPtr &ss)
 {
-    // TODO: Exercise 4.
-    std::cout << "Benchmarking not implemented yet\n";
+    auto si = ss->getSpaceInformation();
+    const double torque = ss->getControlSpace()->as<oc::RealVectorControlSpace>()->getBounds().high[0];
+    const std::string name = "pendulum_tau" + std::to_string(static_cast<int>(torque));
+    ompl::tools::Benchmark b(*ss, name);
+
+    // Main comparison: all planners with their default parameters
+    b.addPlanner(std::make_shared<oc::RRT>(si));
+    b.addPlanner(std::make_shared<oc::KPIECE1>(si));
+    b.addPlanner(std::make_shared<oc::RGRRT>(si));
+
+    // RG-RRT trade-offs: vary one parameter at a time around the default (2 steps, 11 controls)
+    const std::pair<unsigned int, unsigned int> variants[] = {{1, 11}, {5, 11}, {10, 11}, {2, 3}, {2, 5}, {2, 21}};
+    for (const auto &[steps, controls] : variants)
+    {
+        auto planner = std::make_shared<oc::RGRRT>(si);
+        planner->setReachSteps(steps);
+        planner->setNumControls(controls);
+        planner->setName("RGRRT_s" + std::to_string(steps) + "_c" + std::to_string(controls));
+        b.addPlanner(planner);
+    }
+
+    ompl::tools::Benchmark::Request request;
+    request.maxTime = 30.0;  // same budget as planPendulum
+    request.maxMem = 4096.0;
+    request.runCount = 30;   // the handout requires at least 20
+    request.displayProgress = true;
+    b.benchmark(request);
+
+    std::filesystem::create_directories("output");
+    const std::string file = "output/" + name + "_benchmark.log";
+    b.saveResultsToFile(file.c_str());
+    std::cout << "Wrote " << file << '\n';
 }
 
 int main(int /* argc */, char ** /* argv */)
