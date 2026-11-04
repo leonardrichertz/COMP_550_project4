@@ -120,10 +120,7 @@ bool planPendulum(oc::SimpleSetupPtr &ss, int choice)
     else if (choice == 2)
         ss->setPlanner(std::make_shared<oc::KPIECE1>(si));
     else
-    {
-        std::cerr << "RG-RRT not implemented yet\n";
-        return false;
-    }
+        ss->setPlanner(std::make_shared<oc::RGRRT>(si));
 
     ss->setup();
     std::cout << "Pendulum: " << ss->getPlanner()->getName() << '\n';

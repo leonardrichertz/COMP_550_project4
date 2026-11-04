@@ -110,10 +110,7 @@ bool planCar(oc::SimpleSetupPtr &ss, int choice)
     else if (choice == 2)
         ss->setPlanner(std::make_shared<oc::KPIECE1>(si));
     else
-    {
-        std::cerr << "RG-RRT not implemented yet\n";
-        return false;
-    }
+        ss->setPlanner(std::make_shared<oc::RGRRT>(si));
 
     ss->setup();
     std::cout << "Car: " << ss->getPlanner()->getName() << '\n';
@@ -188,17 +185,14 @@ int main(int /* argc */, char ** /* argv */)
             if (!(std::cin >> planner)) return 1;
         } while (planner < 1 || planner > 3);
 
-        if (planner != 3)
-        {
-            std::error_code error;
-            std::filesystem::create_directories("output", error);
-            std::ofstream street("output/street.txt");
-            if (error || !street) { std::cerr << "Cannot write street.txt\n"; return 1; }
-            for (const auto &r : obstacles)
-                street << r.x << ' ' << r.y << ' ' << r.width << ' ' << r.height << '\n';
-            street.close();
-            if (!street) return 1;
-        }
+        std::error_code error;
+        std::filesystem::create_directories("output", error);
+        std::ofstream street("output/street.txt");
+        if (error || !street) { std::cerr << "Cannot write street.txt\n"; return 1; }
+        for (const auto &r : obstacles)
+            street << r.x << ' ' << r.y << ' ' << r.width << ' ' << r.height << '\n';
+        street.close();
+        if (!street) return 1;
         return planCar(ss, planner) ? 0 : 1;
     }
     // Benchmarking
